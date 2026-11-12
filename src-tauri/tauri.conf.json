@@ -2,11 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LaTeX Notes",
   "version": "0.1.0",
-  "identifier": "dev.latexnotes.app",
+  "identifier": "dev.latexnotes.desktop",
   "build": {
-    "beforeDevCommand": "npm --prefix ../ui run dev",
+    "beforeDevCommand": "npm --prefix ui run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --prefix ../ui run build",
+    "beforeBuildCommand": "npm --prefix ui run build || npm --prefix ../ui run build",
     "frontendDist": "../ui/dist"
   },
   "app": {
