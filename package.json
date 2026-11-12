@@ -1,0 +1,13 @@
+{
+  "name": "latex-notes",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "build:ui": "npm --prefix ui run build",
+    "build": "npm run build:ui && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}
