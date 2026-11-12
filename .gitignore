@@ -1,0 +1,19 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Node / Vite / Tauri frontend
+node_modules/
+ui/dist/
+ui/.vite/
+src-tauri/target/
+src-tauri/gen/
+
+# Environment & Secrets
+.env
+.env.*
+*.local
+
+# OS
+.DS_Store
+Thumbs.db

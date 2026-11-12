@@ -1,0 +1,129 @@
+name: Release Cross-Platform Builds
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --draft \
+              --title "LaTeX Notes ${TAG}" \
+              --notes "Cross-platform desktop installers for **macOS** (Apple Silicon & Intel), **Windows** (x64), and **Linux**, plus standalone CLI binaries for manual deployment."
+          fi
+
+  build-tauri:
+    needs: prepare-release
+    if: always() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+            rust-target: aarch64-apple-darwin
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+            rust-target: x86_64-apple-darwin
+          - platform: windows-latest
+            args: ""
+            rust-target: x86_64-pc-windows-msvc
+          - platform: ubuntu-22.04
+            args: ""
+            rust-target: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install Linux webkit dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build Tauri Desktop App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "LaTeX Notes v__VERSION__"
+          releaseBody: "Cross-platform desktop installers for macOS, Windows, and Linux, plus standalone CLI builds for manual deployment."
+          releaseDraft: true
+          prerelease: false
+          tauriScript: npm --prefix ui exec tauri --
+          args: ${{ matrix.args }}
+
+      - name: Build Standalone CLI (Manual Deployment)
+        shell: bash
+        run: |
+          cargo build --release -p latex_notes_cli --target ${{ matrix.rust-target }}
+          mkdir -p dist-cli
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            cp target/${{ matrix.rust-target }}/release/latex-notes.exe dist-cli/
+            7z a "latex-notes-cli-${{ matrix.rust-target }}.zip" ./dist-cli/latex-notes.exe
+          else
+            cp target/${{ matrix.rust-target }}/release/latex-notes dist-cli/
+            tar -czf "latex-notes-cli-${{ matrix.rust-target }}.tar.gz" -C dist-cli latex-notes
+          fi
+
+      - name: Upload Standalone CLI Archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(latex-notes-cli-*.tar.gz latex-notes-cli-*.zip)
+          if [ ${#files[@]} -gt 0 ]; then
+            gh release upload "${GITHUB_REF_NAME}" "${files[@]}" --clobber
+          fi
+
+  publish-release:
+    needs: build-tauri
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
